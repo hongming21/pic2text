@@ -14,4 +14,6 @@ dependencies:
     - "lightning[pytorch-extra]"
     - transformers==4.35.2
     - lightning-bolts
+    - nltk==3.8.1
+    - rouge==1.0.1
     - -e .
