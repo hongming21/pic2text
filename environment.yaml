@@ -1,0 +1,17 @@
+name: pic2text
+channels:
+  - pytorch
+  - defaults
+dependencies:
+  - python=3.8.5
+  - pip=23.3
+  - cudatoolkit=11.8.0
+  - pytorch=2.1.1
+  - torchvision=0.16.1
+  - numpy=1.24.3
+  - pip:
+    - pytorch-lightning==2.1.2
+    - "lightning[pytorch-extra]"
+    - transformers==4.35.2
+    - lightning-bolts
+    - -e .
