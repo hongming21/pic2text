@@ -3,7 +3,7 @@ BUPT-NNDL-COURSE-DESIGN
 
 using 
 ```
-conda env create -f environment.yml
+conda env create -f environment.yaml
 conda activate pic2text 
 ```
 finish conda env create
