@@ -26,7 +26,6 @@ model:
     ignore_keys: []
     input_key: "image"
     gt_key: "description_vectors"
-
 data:
   class_path: main.DataModuleFromConfig
     batch_size: 32
@@ -38,7 +37,6 @@ data:
       num_workers: 64
       pin_memory: true
       prefetch_factor: 4
-
 trainer:
     max_epochs: 500
     benchmark: True

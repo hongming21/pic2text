@@ -46,7 +46,7 @@ class Pic2TextModel(pl.LightningModule):
         i=self.get_data(input,self.input_key)
         gt=self.get_data(input,self.gt_key)
         hidden=self.encoder(i)
-        output=self.decoder(hidden,target[:,:-1,:])
+        output=self.decoder(target,hidden)
         
         return output
     
@@ -61,15 +61,15 @@ class Pic2TextModel(pl.LightningModule):
         inputs = self.get_data(batch, self.input_key)
         gt=self.get_data(batch,self.gt_key)
 
-        output=self(inputs)
+        output=self(gt[:,:-1,:],inputs)
         loss=self.loss(output[:,1:,:],gt[:,:-1,:]) #teacher forcing
         self.log('train/loss',loss,on_step=True,on_epoch=True,prog_bar=True)
     
     def validation_step(self, batch, batch_indx) :
         inputs = self.get_data(batch, self.input_key)
         gt=self.get_data(batch,self.gt_key)
-        <sos>
-        output=self(inputs,<sos>)
+        <eos>
+        output=self(inputs,<eos>)
         loss=self.loss(output,gt)
         self.log('val/loss',loss,on_step=True,on_epoch=True)
         rouge=compute_rouge_score(gt,output)

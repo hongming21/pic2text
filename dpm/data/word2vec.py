@@ -60,7 +60,7 @@ class ImageTextDataset(Dataset):
 
         # 加载图像并调整尺寸
         image = Image.open(image_path)
-        image = image.resize((750, 1101))  # 将图像大小调整为 750x1101
+        image = image.resize((512, 512))  # 将图像大小调整为 750x1101
 
         # 转换图像为numpy数组，然后转为Tensor
         image = np.array(image)
