@@ -3,7 +3,8 @@ from lightning.pytorch.utilities.types import STEP_OUTPUT
 import torch
 import lightning.pytorch as pl
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
-from dpm.utils import instantiate_from_config
+from dpm.utils import instantiate_from_config,get_vocabulary
+from dpm.modules.search_strategy import beam_search,greedy_search
 from dpm.evaluation import compute_meteor_score,compute_rouge_score
 class Pic2TextModel(pl.LightningModule):
     def __init__(self,
@@ -11,13 +12,14 @@ class Pic2TextModel(pl.LightningModule):
                  lossconfig,
                  ecconfig,
                  dcconfig,
-                 vocabulary_fig,
                  embed_dim,
+                vocabulary_path='./data/vocabulary.json',
                  ckpt_path=None,
                  ignore_keys=[],
-                 input_key="image",
-                 gt_key='description_vectors',
-                 gt_text='describtion'
+                 image_key="image",
+                 gt_key='indices',
+                 gt_text='descriptions',
+                 gen_strategy='beam-search'
                  
                  ):
         super.__init__()
@@ -25,12 +27,13 @@ class Pic2TextModel(pl.LightningModule):
         self.loss=instantiate_from_config(lossconfig)
         self.encoder=instantiate_from_config(ecconfig)
         self.decoder=instantiate_from_config(dcconfig)
-        self.vocabular=instantiate_from_config(vocabulary_fig)
+        self.vocabular=get_vocabulary(vocabulary_path)
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
-        self.input_key=input_key
+        self.image_key=image_key
         self.gt_key=gt_key
         self.text_key=gt_text
+        self.strategy=gen_strategy
         self.embed=torch.nn.Embedding(num_embeddings=len(self.vocabular),embedding_dim=embed_dim,padding_idx=0)
         self.output_layer = torch.nn.Linear(embed_dim,len(self.vocabular))
         
@@ -57,36 +60,53 @@ class Pic2TextModel(pl.LightningModule):
         hidden=self.encoder(src)
         output=self.decoder(tgt,hidden)
         logits = self.output_layer(output)
-        return logits.argmax(dim=-1)
+        return logits
     
-    def configure_optimizers(self):
-        lr = self.lr
-        opt = torch.optim.Adam(list(self.encoder.parameters())+
-                                  list(self.decoder.parameters()),
-                                  lr=lr, betas=(0.5, 0.9))
-
-        return opt
     def training_step(self, batch,batch_idx) -> STEP_OUTPUT:
-        inputs = self.get_data(batch, self.input_key)
+        inputs = self.get_data(batch, self.image_key)
         gt=self.get_data(batch,self.gt_key)
 
-        output=self(inputs,gt[:,:-1])
+        output=self(inputs,gt[:,:-1]).argmax(dim=-1)
         loss=self.loss(gt[:,1:],output) #teacher forcing
         self.log('train/loss',loss,on_step=True,on_epoch=True,prog_bar=True)
     
     def validation_step(self, batch, batch_indx) :
-        inputs = self.get_data(batch, self.input_key)
+        inputs = self.get_data(batch, self.image_key)
         gt = self.get_data(batch, self.gt_key)
-        output=self.greedy_search(inputs,gt)
-        # 计算损失
-        loss = self.loss(output, gt)
-        self.log('val/loss', loss, on_step=True, on_epoch=True)
+        gt_text=self.get_data(batch,self.text_key)
+        if self.strategy=="greedy":
+            output=self.greedy_search(model=self,X=inputs,predictions=gt.shape[1]-1)
+            
+            loss = self.loss(output, gt)
+            self.log('val/loss', loss, on_step=True, on_epoch=True)
+            best_sequence=output
+            # 计算评价指标
+        elif self.strategy=="beam":
+            result,_ =beam_search(model=self,X=inputs,predictions=gt.shape[1]-1,beam_width=3,batch_size=20)
+            min_loss = float('inf')
+            best_sequence = None
 
-        # 计算评价指标
-        rouge = compute_rouge_score(gt, output)
-        meteor = compute_meteor_score(gt, output)
+            # 遍历所有beam search的结果
+            for i in range(result.shape[1]):
+                # 提取当前序列
+                current_sequence = result[:, i, :]
+
+                # 计算损失
+                loss = self.loss(current_sequence,gt)
+
+                # 检查是否为最小损失
+                if loss < min_loss:
+                    min_loss = loss
+                    best_sequence = current_sequence
+            self.log('val/loss', loss, on_step=True, on_epoch=True)
+        sentence=self.batch_int_sequence_to_text(best_sequence)
+        rouge = compute_rouge_score(gt, sentence)
+        meteor = compute_meteor_score(gt,sentence)
         self.log('val/rouge-l', rouge, on_epoch=True)
         self.log('val/meteor', meteor, on_epoch=True)
+                
+            
+    '''
     def greedy_search(self,inputs,gt):
         sos_batch = torch.full((inputs.shape[0], 1), 1, dtype=torch.long, device=inputs.device)
 
@@ -111,11 +131,17 @@ class Pic2TextModel(pl.LightningModule):
             output.append(next_token)
 
         output = torch.cat(output, dim=1)
-        return output
-        
+        return output'''
+    def configure_optimizers(self):
+        lr = self.lr
+        opt = torch.optim.Adam(list(self.encoder.parameters())+
+                                  list(self.decoder.parameters()+self.embed.parameters()),
+                                  lr=lr, betas=(0.5, 0.9))
+
+        return opt
     @rank_zero_only
     def log_image_and_text(self,batch):
-        image=self.get_data(batch,self.input_key)
+        image=self.get_data(batch,self.iamge_key)
         gt_text=self.get_data(batch,self.gt_text)
         gt_index=self.get_data(batch,self.gt_key)
         log = dict()
@@ -126,9 +152,9 @@ class Pic2TextModel(pl.LightningModule):
         log["gen_text"]=text_output
         return log
     
-    def batch_int_sequence_to_text(batch_int_sequences, vocabulary, special_tokens_indexes):
+    def batch_int_sequence_to_text(self,batch_int_sequences,  special_tokens_indexes=['<pad>', '<sos>', '<eos>', '<unk>']):
     # 反转词汇表映射：从整数到单词
-        index_to_word = {index: word for word, index in vocabulary.items()}
+        index_to_word = {index: word for word, index in self.vocabulary.items()}
 
         sentences = []
         for int_sequence in batch_int_sequences:
@@ -140,6 +166,8 @@ class Pic2TextModel(pl.LightningModule):
             sentences.append(sentence)
 
         return sentences
+    
 
             
-            
+
+

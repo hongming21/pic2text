@@ -1,4 +1,4 @@
-import sys, datetime, time
+import sys, datetime, time,json,string
 import numpy as np
 from pathlib import Path
 import torch
@@ -40,7 +40,7 @@ class WrappedDataset(Dataset):
         return self.data[idx]
     
 class DataModuleFromConfig(pl.LightningDataModule):
-    def __init__(self, batch_size, train=None, validation=None, test=None, predict=None,
+    def __init__(self, batch_size, train=None, validation=None, test=None, predict=None,collect_fn=None,
                  wrap=False, num_workers=None,pin_memory=True,prefetch_factor=4,shuffle_test_loader=False, use_worker_init_fn=False,
                  shuffle_val_dataloader=False):
         super().__init__()
@@ -50,6 +50,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
         self.pin_memory=pin_memory
         self.prefetch_factor=prefetch_factor
         self.use_worker_init_fn = use_worker_init_fn
+        self.collect_fn=collect_fn
         if train is not None:
             self.dataset_configs["train"] = train
             self.train_dataloader = self._train_dataloader
@@ -84,7 +85,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
         return DataLoader(self.datasets["train"], batch_size=self.batch_size,
                           num_workers=self.num_workers, shuffle=True,
                           pin_memory=self.pin_memory,
-                          worker_init_fn=init_fn,prefetch_factor=self.prefetch_factor)
+                          worker_init_fn=init_fn,prefetch_factor=self.prefetch_factor,collate_fn=self.collect_fn)
 
     def _val_dataloader(self, shuffle=False):
        
@@ -94,7 +95,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers,
                           pin_memory=self.pin_memory,
                           worker_init_fn=init_fn,
-                          shuffle=shuffle,prefetch_factor=self.prefetch_factor)
+                          shuffle=shuffle,prefetch_factor=self.prefetch_factor,collate_fn=self.collect_fn)
 
     def _test_dataloader(self, shuffle=False):
         init_fn = None
@@ -109,11 +110,12 @@ class DataModuleFromConfig(pl.LightningDataModule):
 
 
 class SetupCallback(Callback):
-    def __init__(self, now,logdir):
+    def __init__(self, now,logdir,json_file_paths):
         super().__init__()
         self.logdir=Path(logdir)
         self.now = now
         self.ckptdir=self.logdir/'checkpoints'
+        self.text_data_path=json_file_paths
     def on_exception(self, trainer, pl_module):
         if trainer.global_rank == 0:
             print("Summoning checkpoint.")
@@ -125,6 +127,52 @@ class SetupCallback(Callback):
             # Create logdirs and save configs
             self.logdir.mkdir(parents=True, exist_ok=True)
             self.ckptdir.mkdir(parents=True, exist_ok=True)
+            self.create_and_save_vocab(self.text_data_path)
+    def create_and_save_vocab(json_file_paths, save_path='./data/vocabulary.json'):
+        """
+        如果不存在，则从两个描述文件中创建词汇表并将其保存到本地。
+
+        Args:
+            json_file_paths (list of Path objects): 包含图片名称和对应描述的JSON文件路径列表。
+            save_path (Path): 保存词汇表的本地路径。
+        """
+        def preprocess_text(text):
+            """
+            对文本进行预处理，将句号与单词分离。
+            """
+            # 使用空格替换句号，确  保句号被视为独立的单词
+            text = text.replace('.', ' . ')
+            return text.lower().translate(str.maketrans('', '', string.punctuation.replace('.', '')))
+
+        save_path = Path(save_path)
+        if save_path.exists():
+            print("Vocabulary file already exists. Skipping creation.")
+            return
+
+        word_freq = {}
+        for json_file_path in json_file_paths:
+            with open(json_file_path, 'r', encoding='utf-8') as file:
+                descriptions = json.load(file)
+
+            for _, description in descriptions.items():
+                preprocessed_text = preprocess_text(description)
+                words = preprocessed_text.split()
+                for word in words:
+                    if word not in word_freq:
+                        word_freq[word] = 1
+                    else:
+                        word_freq[word] += 1
+        vocab = {'<pad>': 0, '<sos>': 1, '<eos>': 2, '<unk>': 3, '.': 4}
+        idx = 5
+        for word in sorted(word_freq, key=word_freq.get, reverse=True):
+            if word not in vocab:
+                vocab[word] = idx
+                idx += 1
+
+        with open(save_path, 'w', encoding='utf-8') as file:
+            json.dump(vocab, file)
+        print('save vocabulary!')
+        
 
 
 class CUDACallback(Callback):
@@ -297,6 +345,7 @@ class Image_text_logger(Callback):
         if hasattr(pl_module, 'calibrate_grad_norm'):
             if (pl_module.calibrate_grad_norm and batch_idx % 25 == 0) and batch_idx > 0:
                 self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
+
 
 
 if __name__ == "__main__":

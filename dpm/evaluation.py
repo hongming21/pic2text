@@ -1,6 +1,7 @@
 from rouge import Rouge 
 import numpy as np
 from nltk.translate import meteor_score
+
 def compute_rouge_score(references, candidates):
     # 计算 ROUGE-L 分数
     rouge = Rouge(metrics=['rouge-l'])
