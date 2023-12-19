@@ -2,7 +2,7 @@ import importlib
 import json
 def instantiate_from_config(config):
 
-    return get_obj_from_str(config["class_path"])(**config.get("init_args", dict()))
+    return get_obj_from_str(config["target"])(**config.get("params", dict()))
 
 
 def get_obj_from_str(string, reload=False):

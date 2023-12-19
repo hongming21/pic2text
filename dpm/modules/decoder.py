@@ -14,6 +14,7 @@ class Decoder_only(nn.Module):
 
     def forward(self, gt, x):
         x = x.permute(1, 0, 2) #[S,N,E]
+        gt=gt.permute(1,0,2)
         tgt_mask = self.generate_square_subsequent_mask(gt.size(0))
         output=self.decode(gt, x, tgt_mask=tgt_mask)
         return output.permute(1,0,2)
@@ -32,6 +33,7 @@ class Encoder_Decoder(nn.Module):
 
     def forward(self,gt,x):
         x=x.permute(1,0,2)
+        gt=gt.permute(1,0,2)
         tgt_mask = self.generate_square_subsequent_mask(gt.size(0))
         output=self.transformer(src=x,tgt=gt,tgt_mask=tgt_mask)
         return output.permute(1,0,2)

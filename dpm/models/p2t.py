@@ -9,7 +9,7 @@ from dpm.evaluation import compute_meteor_score,compute_rouge_score
 class Pic2TextModel(pl.LightningModule):
     def __init__(self,
                  learning_rate,
-                 lossconfig,
+                 loss,
                  ecconfig,
                  dcconfig,
                  embed_dim,
@@ -18,24 +18,25 @@ class Pic2TextModel(pl.LightningModule):
                  ignore_keys=[],
                  image_key="image",
                  gt_key='indices',
-                 gt_text='descriptions',
+                 gt_text='description',
                  gen_strategy='beam-search'
                  
                  ):
-        super.__init__()
+        super().__init__()
         self.lr=learning_rate
-        self.loss=instantiate_from_config(lossconfig)
+        self.loss=instantiate_from_config(loss)
         self.encoder=instantiate_from_config(ecconfig)
         self.decoder=instantiate_from_config(dcconfig)
-        self.vocabular=get_vocabulary(vocabulary_path)
+        self.vocabulary=get_vocabulary(vocabulary_path)
+        
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
         self.image_key=image_key
         self.gt_key=gt_key
         self.text_key=gt_text
         self.strategy=gen_strategy
-        self.embed=torch.nn.Embedding(num_embeddings=len(self.vocabular),embedding_dim=embed_dim,padding_idx=0)
-        self.output_layer = torch.nn.Linear(embed_dim,len(self.vocabular))
+        self.embed=torch.nn.Embedding(num_embeddings=len(self.vocabulary),embedding_dim=embed_dim,padding_idx=0)
+        self.output_layer = torch.nn.Linear(embed_dim,len(self.vocabulary))
         
     def init_from_ckpt(self, path, ignore_keys=list()):
         sd = torch.load(path, map_location="cpu")["state_dict"]
@@ -49,64 +50,77 @@ class Pic2TextModel(pl.LightningModule):
         print(f"Restored from {path}")
     def get_data(self, batch, k):
         x = batch[k]
-        if len(x.shape) == 3:
-            return x
-        elif len(x.shape) ==4 and x.shape[1]!=3:
-            return x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
+        if  isinstance(x,torch.Tensor):
+            if len(x.shape) == 3:
+                return x
+            elif len(x.shape) ==4 and x.shape[1]!=3:
+                return x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
+        return x
     
     def forward(self, input,target):
         src=input
+        
         tgt=self.embed(target)
+        
         hidden=self.encoder(src)
+        
         output=self.decoder(tgt,hidden)
+        
         logits = self.output_layer(output)
+        
         return logits
-    
+    def compute_loss(self,inputs,gt):
+        logits=self(inputs,gt[:,:-1])
+        logits = logits.reshape(-1, logits.size(-1))
+        gt=gt[:,1:].reshape(-1)
+        loss=self.loss(logits,gt) #teacher forcing
+        return loss
     def training_step(self, batch,batch_idx) -> STEP_OUTPUT:
         inputs = self.get_data(batch, self.image_key)
         gt=self.get_data(batch,self.gt_key)
+        loss=self.compute_loss(inputs,gt)
 
-        output=self(inputs,gt[:,:-1]).argmax(dim=-1)
-        loss=self.loss(gt[:,1:],output) #teacher forcing
         self.log('train/loss',loss,on_step=True,on_epoch=True,prog_bar=True)
     
     def validation_step(self, batch, batch_indx) :
         inputs = self.get_data(batch, self.image_key)
         gt = self.get_data(batch, self.gt_key)
         gt_text=self.get_data(batch,self.text_key)
+        
+        loss=self.compute_loss(inputs,gt)
+        self.log('val/loss',loss,on_step=True,on_epoch=True,prog_bar=True)
         if self.strategy=="greedy":
-            output=self.greedy_search(model=self,X=inputs,predictions=gt.shape[1]-1)
+            output=greedy_search(model=self,X=inputs,predictions=gt.shape[1])
             
-            loss = self.loss(output, gt)
-            self.log('val/loss', loss, on_step=True, on_epoch=True)
             best_sequence=output
             # 计算评价指标
         elif self.strategy=="beam":
-            result,_ =beam_search(model=self,X=inputs,predictions=gt.shape[1]-1,beam_width=3,batch_size=20)
+            result,_ =beam_search(model=self,X=inputs,predictions=gt.shape[1],beam_width=3,batch_size=20)
             min_loss = float('inf')
-            best_sequence = None
 
             # 遍历所有beam search的结果
             for i in range(result.shape[1]):
                 # 提取当前序列
                 current_sequence = result[:, i, :]
 
-                # 计算损失
-                loss = self.loss(current_sequence,gt)
-
                 # 检查是否为最小损失
                 if loss < min_loss:
                     min_loss = loss
                     best_sequence = current_sequence
-            self.log('val/loss', loss, on_step=True, on_epoch=True)
+        else:
+            raise RuntimeError('strategy doesnt match!')
         sentence=self.batch_int_sequence_to_text(best_sequence)
-        rouge = compute_rouge_score(gt, sentence)
-        meteor = compute_meteor_score(gt,sentence)
+        try:
+            rouge = compute_rouge_score(gt_text, sentence)
+            meteor = compute_meteor_score(gt_text,sentence)
+        except:
+            rouge=0
+            meteor=0
         self.log('val/rouge-l', rouge, on_epoch=True)
         self.log('val/meteor', meteor, on_epoch=True)
                 
-            
     '''
+    
     def greedy_search(self,inputs,gt):
         sos_batch = torch.full((inputs.shape[0], 1), 1, dtype=torch.long, device=inputs.device)
 
@@ -135,21 +149,28 @@ class Pic2TextModel(pl.LightningModule):
     def configure_optimizers(self):
         lr = self.lr
         opt = torch.optim.Adam(list(self.encoder.parameters())+
-                                  list(self.decoder.parameters()+self.embed.parameters()),
+                                  list(self.decoder.parameters())+list(self.embed.parameters())+list(self.output_layer.parameters()),
                                   lr=lr, betas=(0.5, 0.9))
 
         return opt
     @rank_zero_only
     def log_image_and_text(self,batch):
-        image=self.get_data(batch,self.iamge_key)
-        gt_text=self.get_data(batch,self.gt_text)
-        gt_index=self.get_data(batch,self.gt_key)
-        log = dict()
-        index_output=self.greedy_search(image,gt_index)
-        text_output=self.batch_int_sequence_to_text(index_output)
-        log['input_img']=image
-        log["gt_text"] = gt_text
-        log["gen_text"]=text_output
+        with torch.no_grad:
+            image=self.get_data(batch,self.image_key)
+            gt_text=self.get_data(batch,self.text_key)
+            gt_index=self.get_data(batch,self.gt_key)
+            log = dict()
+            if self.strategy=='greedy':
+                index_output=greedy_search(model=self,X=image,predictions=gt_index.shape[1])
+            elif self.strategy=='beam':
+                index_output=beam_search(model=self,X=image,predictions=gt_index.shape[1])
+            text_output=self.batch_int_sequence_to_text(index_output)
+            log['input_img']=image
+            gt_text_str_list = [' '.join(sentence) for sentence in gt_text]
+            text_output_str_list = [' '.join(sentence) for sentence in text_output]
+
+            log["gt_text"] = gt_text_str_list
+            log["gen_text"]=text_output_str_list
         return log
     
     def batch_int_sequence_to_text(self,batch_int_sequences,  special_tokens_indexes=['<pad>', '<sos>', '<eos>', '<unk>']):

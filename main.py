@@ -9,12 +9,12 @@ from omegaconf import OmegaConf
 import lightning.pytorch as pl
 from lightning.pytorch.cli import LightningCLI 
 from lightning.pytorch.loggers import TensorBoardLogger
-from pl_bolts.callbacks import PrintTableMetricsCallback
+import argparse
 from lightning.pytorch.callbacks import ModelCheckpoint, Callback, LearningRateMonitor
 from lightning.pytorch.utilities.rank_zero import rank_zero_only,rank_zero_info
 from functools import partial
 from torch.utils.data import  DataLoader, Dataset
-from mri_ldm.util import instantiate_from_config
+from dpm.utils import instantiate_from_config
 
         
 
@@ -50,7 +50,8 @@ class DataModuleFromConfig(pl.LightningDataModule):
         self.pin_memory=pin_memory
         self.prefetch_factor=prefetch_factor
         self.use_worker_init_fn = use_worker_init_fn
-        self.collect_fn=collect_fn
+        self.collect_fn=instantiate_from_config(collect_fn).pad
+        self.shuffle_val=shuffle_val_dataloader
         if train is not None:
             self.dataset_configs["train"] = train
             self.train_dataloader = self._train_dataloader
@@ -95,7 +96,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers,
                           pin_memory=self.pin_memory,
                           worker_init_fn=init_fn,
-                          shuffle=shuffle,prefetch_factor=self.prefetch_factor,collate_fn=self.collect_fn)
+                          shuffle=self.shuffle_val,prefetch_factor=self.prefetch_factor,collate_fn=self.collect_fn)
 
     def _test_dataloader(self, shuffle=False):
         init_fn = None
@@ -110,12 +111,11 @@ class DataModuleFromConfig(pl.LightningDataModule):
 
 
 class SetupCallback(Callback):
-    def __init__(self, now,logdir,json_file_paths):
+    def __init__(self, now,logdir):
         super().__init__()
         self.logdir=Path(logdir)
         self.now = now
         self.ckptdir=self.logdir/'checkpoints'
-        self.text_data_path=json_file_paths
     def on_exception(self, trainer, pl_module):
         if trainer.global_rank == 0:
             print("Summoning checkpoint.")
@@ -127,52 +127,8 @@ class SetupCallback(Callback):
             # Create logdirs and save configs
             self.logdir.mkdir(parents=True, exist_ok=True)
             self.ckptdir.mkdir(parents=True, exist_ok=True)
-            self.create_and_save_vocab(self.text_data_path)
-    def create_and_save_vocab(json_file_paths, save_path='./data/vocabulary.json'):
-        """
-        如果不存在，则从两个描述文件中创建词汇表并将其保存到本地。
-
-        Args:
-            json_file_paths (list of Path objects): 包含图片名称和对应描述的JSON文件路径列表。
-            save_path (Path): 保存词汇表的本地路径。
-        """
-        def preprocess_text(text):
-            """
-            对文本进行预处理，将句号与单词分离。
-            """
-            # 使用空格替换句号，确  保句号被视为独立的单词
-            text = text.replace('.', ' . ')
-            return text.lower().translate(str.maketrans('', '', string.punctuation.replace('.', '')))
-
-        save_path = Path(save_path)
-        if save_path.exists():
-            print("Vocabulary file already exists. Skipping creation.")
-            return
-
-        word_freq = {}
-        for json_file_path in json_file_paths:
-            with open(json_file_path, 'r', encoding='utf-8') as file:
-                descriptions = json.load(file)
-
-            for _, description in descriptions.items():
-                preprocessed_text = preprocess_text(description)
-                words = preprocessed_text.split()
-                for word in words:
-                    if word not in word_freq:
-                        word_freq[word] = 1
-                    else:
-                        word_freq[word] += 1
-        vocab = {'<pad>': 0, '<sos>': 1, '<eos>': 2, '<unk>': 3, '.': 4}
-        idx = 5
-        for word in sorted(word_freq, key=word_freq.get, reverse=True):
-            if word not in vocab:
-                vocab[word] = idx
-                idx += 1
-
-        with open(save_path, 'w', encoding='utf-8') as file:
-            json.dump(vocab, file)
-        print('save vocabulary!')
-        
+            
+   
 
 
 class CUDACallback(Callback):
@@ -348,15 +304,17 @@ class Image_text_logger(Callback):
 
 
 
+   
 if __name__ == "__main__":
+
     torch.set_float32_matmul_precision('high')
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     logdir=Path('logs')
     sys.path.append(Path.cwd())
+    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=500,val_batch_frequency=200,
+                                          max_log=2)
     cuda_callback=CUDACallback()
-    printcall=PrintTableMetricsCallback()
     lr_callback=LearningRateMonitor(logging_interval='step')
-    img_text_log=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=500,val_batch_frequency=100)
     model_ckpt_callback=ModelCheckpoint( 
                     dirpath=str(logdir/now/'checkpoints'),
                     monitor='val_loss',
@@ -370,8 +328,6 @@ if __name__ == "__main__":
     cli=LightningCLI(
         trainer_defaults={
             'logger':lazy_instance(TensorBoardLogger,save_dir=logdir,name=now,version=0),
-            'callbacks':[img_text_log,printcall,cuda_callback,lr_callback,model_ckpt_callback]
+            'callbacks':[img_logger_callback,cuda_callback,lr_callback,model_ckpt_callback]
         }
     )
-    
-    

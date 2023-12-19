@@ -138,7 +138,7 @@ def beam_search(
         Y = torch.ones(X.shape[0], 1).to(next(model.parameters()).device).long()
         # The next command can be a memory bottleneck, can be controlled with the batch 
         # size of the predict method.
-        next_probabilities = model.forward(X, Y)[:, -1, :]
+        next_probabilities = model.forward(X,Y)[:, -1, :]
         vocabulary_size = next_probabilities.shape[-1]
         probabilities, next_chars = next_probabilities.squeeze().log_softmax(-1)\
         .topk(k = beam_width, axis = -1)
@@ -151,7 +151,7 @@ def beam_search(
         if progress_bar > 0:
             predictions_iterator = tqdm(predictions_iterator)
         for i in predictions_iterator:
-            dataset = tud.TensorDataset(X.repeat((beam_width, 1, 1)).transpose(0, 1).flatten(end_dim = 1), Y)
+            dataset = tud.TensorDataset(X.repeat((beam_width, 1, 1,1,1)).transpose(0, 1).flatten(end_dim = 1), Y)
             loader = tud.DataLoader(dataset, batch_size = batch_size)
             next_probabilities = []
             iterator = iter(loader)
