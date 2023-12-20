@@ -4,7 +4,7 @@ model:
     learning_rate: 0.00005
     loss: 
       target: torch.nn.CrossEntropyLoss
-      init: 
+      params: 
         ignore_index: 0
     ecconfig:
       target: dpm.modules.encoder.ViTencoder

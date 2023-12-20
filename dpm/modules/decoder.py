@@ -11,7 +11,7 @@ class Decoder_only(nn.Module):
     
 
     def forward(self, gt, x):
-        print(x.shape)
+        
         x = x.permute(1, 0, 2) #[S,N,E]
         gt=gt.permute(1,0,2)
         tgt_mask = nn.Transformer.generate_square_subsequent_mask(gt.size(0))
