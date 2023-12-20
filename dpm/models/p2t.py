@@ -97,6 +97,7 @@ class Pic2TextModel(pl.LightningModule):
         gt_text=self.get_data(batch,self.text_key)
         loss=self.compute_loss(inputs,gt)
         self.log('val/loss',loss,on_step=True,on_epoch=True,prog_bar=True)
+        self.log('val_loss',loss,on_step=True,on_epoch=True,prog_bar=True)
         if self.strategy=="greedy":
             output,_=greedy_search(model=self,X=inputs,predictions=gt.shape[1])
             

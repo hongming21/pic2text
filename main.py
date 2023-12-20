@@ -188,19 +188,19 @@ class Image_text_logger(Callback):
                 pl_module.logger.experiment.add_image(
                         name,grid,
                         pl_module.global_step)
-            elif k=='gt_text':
-                name=f'{split}/{pl_module.current_epoch}/gt_text'
-                for i in range(len(data[k])):
-                    pl_module.logger.experiment.add_text(
-                        name,data[k][i],pl_module.global_step
-                    )
-            elif k=='gen_text':
-                name=f'{split}/{pl_module.current_epoch}/gen_text'
-                for i in range(len(data[k])):
-                    pl_module.logger.experiment.add_text(
-                        name,data[k][i],pl_module.global_step
-                    )
+            elif k == 'gt_text':
+                name = f'{split}/{pl_module.current_epoch}/gt_text'
+                # 将所有句子使用 <br> 连接起来
+                all_text = '<br>'.join(data[k])
+                # 记录连接后的文本
+                pl_module.logger.experiment.add_text(name, all_text, pl_module.global_step)
 
+            elif k == 'gen_text':
+                name = f'{split}/{pl_module.current_epoch}/gen_text'
+                # 同样地，将所有句子使用 <br> 连接起来
+                all_text = '<br>'.join(data[k])
+                # 记录连接后的文本
+                pl_module.logger.experiment.add_text(name, all_text, pl_module.global_step)
     @rank_zero_only
     def log_local(self, split, data,
                   global_step, current_epoch, batch_idx):
@@ -253,7 +253,6 @@ class Image_text_logger(Callback):
                 hasattr(pl_module, "log_image_and_text") and
                 callable(pl_module.log_image_and_text) and
                 self.max_log > 0):
-           
             logger = type(pl_module.logger)
 
             is_train = pl_module.training
@@ -328,12 +327,12 @@ if __name__ == "__main__":
     logdir=Path('logs')
     sys.path.append(Path.cwd())
     img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=100,val_batch_frequency=50,
-                                          max_log=2)
+                                          max_log=4,log_on_batch_idx=True)
     cuda_callback=CUDACallback()
     lr_callback=LearningRateMonitor(logging_interval='step')
     model_ckpt_callback=ModelCheckpoint( 
                     dirpath=str(logdir/now/'checkpoints'),
-                    monitor='val/loss',
+                    monitor='val_loss',
                     verbose= True,
                     filename='{epoch:02d}-{val_loss:.2f}',
                     save_top_k=3,
