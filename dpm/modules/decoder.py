@@ -8,14 +8,13 @@ class Decoder_only(nn.Module):
         self.decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=num_head)
         self.decode = nn.TransformerDecoder(self.decoder_layer, num_layers=num_layer)
 
-    def generate_square_subsequent_mask(self, sz):
-        mask = torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
-        return mask
+    
 
     def forward(self, gt, x):
+        print(x.shape)
         x = x.permute(1, 0, 2) #[S,N,E]
         gt=gt.permute(1,0,2)
-        tgt_mask = self.generate_square_subsequent_mask(gt.size(0))
+        tgt_mask = nn.Transformer.generate_square_subsequent_mask(gt.size(0))
         output=self.decode(gt, x, tgt_mask=tgt_mask)
         return output.permute(1,0,2)
 

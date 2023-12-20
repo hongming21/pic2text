@@ -100,8 +100,8 @@ def beam_search(
     model, 
     X, 
     predictions = 20,
-    beam_width = 5,
-    batch_size = 50, 
+    beam_width = 3,
+    batchsize = 20, 
     progress_bar = 0
 ):
     """
@@ -152,7 +152,7 @@ def beam_search(
             predictions_iterator = tqdm(predictions_iterator)
         for i in predictions_iterator:
             dataset = tud.TensorDataset(X.repeat((beam_width, 1, 1,1,1)).transpose(0, 1).flatten(end_dim = 1), Y)
-            loader = tud.DataLoader(dataset, batch_size = batch_size)
+            loader = tud.DataLoader(dataset, batch_size = batchsize)
             next_probabilities = []
             iterator = iter(loader)
             if progress_bar > 1:

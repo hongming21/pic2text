@@ -145,8 +145,8 @@ class CUDACallback(Callback):
         max_memory = torch.cuda.max_memory_allocated(self.root_gpu(trainer)) / 2 ** 20
         epoch_time = time.time() - self.start_time
 
-        max_memory = trainer.training_type_plugin.reduce(max_memory)
-        epoch_time = trainer.training_type_plugin.reduce(epoch_time)
+        max_memory = trainer.strategy.reduce(max_memory)
+        epoch_time = trainer.strategy.reduce(epoch_time)
 
         rank_zero_info(f"Average Epoch time: {epoch_time:.2f} seconds")
         rank_zero_info(f"Average Peak memory {max_memory:.2f}MiB")
@@ -177,24 +177,26 @@ class Image_text_logger(Callback):
         self.log_first_step = log_first_step
 
     @rank_zero_only
-    def _testtube(self, pl_module, data,batch_idx, split,epoch):
-        image=image.permute(0, 2, 3, 1)
+    def _testtube(self, pl_module, data,batch_idx, split):
+
         name=f'{split}/{pl_module.current_epoch}'
         for k in data:
             if k=="input_img":
-                pl_module.logger.image(
-                        name,data[k],max_outputs=self.max_log,
-                        step=pl_module.global_step)
+                grid = torchvision.utils.make_grid(data[k])
+                grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,
+                pl_module.logger.experiment.add_image(
+                        name,grid,
+                        pl_module.global_step)
             else:
-                for i in len(data[k]):
-                    pl_module.logger.text(
-                        name,data[k],step=pl_module.global_step
+                for i in range(len(data[k])):
+                    pl_module.logger.experiment.add_text(
+                        name,data[k][i],pl_module.global_step
                     )
 
     @rank_zero_only
     def log_local(self, split, data,
                   global_step, current_epoch, batch_idx):
-        root = Path(self.save_dir)/'image'/split
+        root = Path(self.save_dir)/'result'/split
         for k in data:
             if k=="input_img":
                 grid = torchvision.utils.make_grid(data[k], nrow=4)
@@ -220,7 +222,8 @@ class Image_text_logger(Callback):
                         global_step,
                         current_epoch,
                         batch_idx)
-                    path=root/'text'/filename
+                    path=root/k/filename
+                    path.parent.mkdir(parents=True, exist_ok=True)
                     with open(path, 'w', encoding='utf-8') as file:
                         for sentence in data[k]:
                             file.write(sentence + '\n')
@@ -230,7 +233,8 @@ class Image_text_logger(Callback):
                         global_step,
                         current_epoch,
                         batch_idx)
-                    path=root/'text'/filename
+                    path=root/k/filename
+                    path.parent.mkdir(parents=True, exist_ok=True)
                     with open(path, 'w', encoding='utf-8') as file:
                         for sentence in data[k]:
                             file.write(sentence + '\n')
@@ -238,9 +242,10 @@ class Image_text_logger(Callback):
     def log_img_and_text(self, pl_module, batch, batch_idx, split="train"):
         check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
         if (self.check_frequency(check_idx,split) and  # batch_idx % self.batch_freq == 0
-                hasattr(pl_module, "log_images_and_text") and
-                callable(pl_module.log_images_and_text) and
+                hasattr(pl_module, "log_image_and_text") and
+                callable(pl_module.log_image_and_text) and
                 self.max_log > 0):
+           
             logger = type(pl_module.logger)
 
             is_train = pl_module.training
@@ -248,7 +253,7 @@ class Image_text_logger(Callback):
                 pl_module.eval()
 
             with torch.no_grad():
-                log = pl_module.log_images_and_text(batch, split=split, **self.log_images_kwargs)
+                log = pl_module.log_image_and_text(batch, **self.log_images_kwargs)
 
             for k in log:
                 if k=='input_img':
@@ -259,10 +264,10 @@ class Image_text_logger(Callback):
                         if self.clamp:
                             log[k] = torch.clamp(log[k], -1., 1.)
                 else:
-                    N = min(log[k].shape[0], self.max_log)
+                    N = min(len(log[k]), self.max_log)
                     log[k] = log[k][:N]
             data=log
-
+            
             self.log_local( split, data,
                            pl_module.global_step, pl_module.current_epoch, batch_idx)
 
@@ -294,7 +299,9 @@ class Image_text_logger(Callback):
         return False
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx='train_dataloader'):
+        
         if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
+           
             self.log_img_and_text(pl_module, batch, batch_idx, split="train")
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx='val_dataloader'):
@@ -313,13 +320,13 @@ if __name__ == "__main__":
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     logdir=Path('logs')
     sys.path.append(Path.cwd())
-    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=500,val_batch_frequency=200,
+    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=100,val_batch_frequency=50,
                                           max_log=2)
     cuda_callback=CUDACallback()
     lr_callback=LearningRateMonitor(logging_interval='step')
     model_ckpt_callback=ModelCheckpoint( 
                     dirpath=str(logdir/now/'checkpoints'),
-                    monitor='val_loss',
+                    monitor='val/loss',
                     verbose= True,
                     filename='{epoch:02d}-{val_loss:.2f}',
                     save_top_k=3,
