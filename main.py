@@ -179,15 +179,23 @@ class Image_text_logger(Callback):
     @rank_zero_only
     def _testtube(self, pl_module, data,batch_idx, split):
 
-        name=f'{split}/{pl_module.current_epoch}'
+        
         for k in data:
             if k=="input_img":
+                name=f'{split}/{pl_module.current_epoch}/image'
                 grid = torchvision.utils.make_grid(data[k])
                 grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,
                 pl_module.logger.experiment.add_image(
                         name,grid,
                         pl_module.global_step)
-            else:
+            elif k=='gt_text':
+                name=f'{split}/{pl_module.current_epoch}/gt_text'
+                for i in range(len(data[k])):
+                    pl_module.logger.experiment.add_text(
+                        name,data[k][i],pl_module.global_step
+                    )
+            elif k=='gen_text':
+                name=f'{split}/{pl_module.current_epoch}/gen_text'
                 for i in range(len(data[k])):
                     pl_module.logger.experiment.add_text(
                         name,data[k][i],pl_module.global_step
