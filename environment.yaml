@@ -9,10 +9,11 @@ dependencies:
   - pytorch=1.9.1
   - torchvision=0.10.1
   - pip:
-    - tensorboard=2.14.0
+    - tensorboard==2.14.0
     - pytorch-lightning==2.1.2
     - "lightning[pytorch-extra]"
     - transformers==4.35.2
+    - numpy==1.24.0
     - nltk==3.8.1
     - rouge==1.0.1
     - -e .

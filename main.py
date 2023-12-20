@@ -267,7 +267,6 @@ class Image_text_logger(Callback):
                     N = min(len(log[k]), self.max_log)
                     log[k] = log[k][:N]
             data=log
-            
             self.log_local( split, data,
                            pl_module.global_step, pl_module.current_epoch, batch_idx)
 

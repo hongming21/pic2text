@@ -37,7 +37,7 @@ class Pic2TextModel(pl.LightningModule):
         self.strategy=gen_strategy
         self.embed=torch.nn.Embedding(num_embeddings=len(self.vocabulary),embedding_dim=embed_dim,padding_idx=0)
         self.output_layer = torch.nn.Linear(embed_dim,len(self.vocabulary))
-        
+        #self.automatic_optimization=False
     def init_from_ckpt(self, path, ignore_keys=list()):
         sd = torch.load(path, map_location="cpu")["state_dict"]
         keys = list(sd.keys())
@@ -62,11 +62,12 @@ class Pic2TextModel(pl.LightningModule):
         tgt = self.embed(target)
         hidden = self.encoder(src)
         output = self.decoder(tgt, hidden)
-        
         logits = self.output_layer(output)
 
         return logits
-
+    
+    
+    
     def compute_loss(self, inputs, gt):
         logits = self(inputs, gt[:, :-1])
         out = logits.reshape(-1, logits.size(-1))
@@ -74,25 +75,26 @@ class Pic2TextModel(pl.LightningModule):
         
         loss = self.loss(out, gt)  # teacher forcing
         return loss
-
-    def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
-
+    def training_step(self, batch, batch_idx):
+        #opt=self.optimizers()
+        #opt.zero_grad()
         inputs = self.get_data(batch, self.image_key)
         gt = self.get_data(batch, self.gt_key)
         logits = self(inputs, gt[:, :-1])
-        out = logits.reshape(-1, logits.size(-1))
+        output = logits.reshape(-1, logits.size(-1))
 
-        gt = gt[:, 1:].reshape(-1)
+        target = gt[:, 1:].reshape(-1)
         
         
-        loss=self.loss(out,gt)# teacher forcing
-
+        loss=self.loss(output,target)# teacher forcing
+        #self.manual_backward(loss)
+        #opt.step()
         self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        return loss
     def validation_step(self, batch, batch_indx) :
         inputs = self.get_data(batch, self.image_key)
         gt = self.get_data(batch, self.gt_key)
         gt_text=self.get_data(batch,self.text_key)
-        
         loss=self.compute_loss(inputs,gt)
         self.log('val/loss',loss,on_step=True,on_epoch=True,prog_bar=True)
         if self.strategy=="greedy":
@@ -158,7 +160,6 @@ class Pic2TextModel(pl.LightningModule):
         opt = torch.optim.Adam(list(self.encoder.parameters())+
                                   list(self.decoder.parameters())+list(self.embed.parameters())+list(self.output_layer.parameters()),
                                   lr=lr, betas=(0.5, 0.9))
-
         return opt
     @rank_zero_only
     def log_image_and_text(self,batch):
@@ -179,21 +180,21 @@ class Pic2TextModel(pl.LightningModule):
             gt_text_str_list = [text.replace('<pad>', '') for text in gt_text_str_list]
             log["gt_text"] = gt_text_str_list
             log["gen_text"]=gen_text_str_list
-            print('log_here')
+
         return log
     
     def batch_int_sequence_to_text(self,batch_int_sequences,  special_tokens_indexes=[0, 1,2, 3]):
     
         index_to_word = {index: word for word, index in self.vocabulary.items()}
-        print(index_to_word)
+        
         sentences = []
-        print(batch_int_sequences.shape)
+        
         
         for int_sequence in batch_int_sequences:
-            print(int_sequence)
+    
             # 转换每个整数序列为单词序列并过滤特殊词汇
             words = [index_to_word.get(index, "") for index in int_sequence if index not in special_tokens_indexes]
-            print(words)
+    
             # 将单词序列组合为句子
             #sentence = ' '.join(words)
             #print('sentence',sentence)
