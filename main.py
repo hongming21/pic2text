@@ -131,26 +131,28 @@ class SetupCallback(Callback):
    
 
 
+
 class CUDACallback(Callback):
-    # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
+
     def on_train_epoch_start(self, trainer, pl_module):
         # Reset the memory use counter
-        torch.cuda.reset_peak_memory_stats(trainer.strategy.root_device.index)
-        torch.cuda.synchronize(trainer.strategy.root_device.index)
+        #torch.cuda.reset_peak_memory_stats(self.root_gpu(trainer))
+        torch.cuda.synchronize(self.root_gpu(trainer))
         self.start_time = time.time()
 
-    def on_train_epoch_end(self, trainer, pl_module, outputs=None,dataloader_idx='train_dataloader'):
-        torch.cuda.synchronize(trainer.strategy.root_device.index)
-        max_memory = torch.cuda.max_memory_allocated(trainer.strategy.root_device.index) / 2 ** 20
+    def on_train_epoch_end(self, trainer, pl_module):
+        torch.cuda.synchronize(self.root_gpu(trainer))
+        max_memory = torch.cuda.max_memory_allocated(self.root_gpu(trainer)) / 2 ** 20
         epoch_time = time.time() - self.start_time
 
-        try:
-            
+        max_memory = trainer.training_type_plugin.reduce(max_memory)
+        epoch_time = trainer.training_type_plugin.reduce(epoch_time)
 
-            rank_zero_info(f"Average Epoch time: {epoch_time:.2f} seconds",rank_zero_only=True)
-            rank_zero_info(f"Average Peak memory {max_memory:.2f}MiB",rank_zero_only=True)
-        except AttributeError:
-            pass
+        rank_zero_info(f"Average Epoch time: {epoch_time:.2f} seconds")
+        rank_zero_info(f"Average Peak memory {max_memory:.2f}MiB")
+
+    def root_gpu(self, trainer):
+        return trainer.strategy.root_device.index
 
 class Image_text_logger(Callback):
     def __init__(self, save_dir,train_batch_frequency,val_batch_frequency, max_log,clamp=True, increase_log_steps=True,
