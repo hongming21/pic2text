@@ -7,6 +7,11 @@ conda env create -f environment.yaml
 conda activate pic2text 
 ```
 finish conda env create
+using 
+```
+python set_vocab.py
+```
+set vocabulary
 
 using 
 ```
