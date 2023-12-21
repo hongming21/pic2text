@@ -50,7 +50,7 @@ data:
     pin_memory: False
     prefetch_factor: 2
 trainer:
-    check_val_every_n_epoch: 1
+    check_val_every_n_epoch: 5
     max_epochs: 25
     benchmark: True
 seed_everything: 42
