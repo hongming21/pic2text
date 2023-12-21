@@ -9,9 +9,9 @@ model:
     ecconfig:
       target: dpm.modules.encoder.ViTencoder
       params:
-        hidden_size: 768
-        num_hidden_layers: 8
-        num_attention_heads: 8
+        hidden_size: 1024
+        num_hidden_layers: 14
+        num_attention_heads: 16
         intermediate_size: 3072
         image_size: [768,512]
         patch_size: 32
@@ -20,11 +20,14 @@ model:
     dcconfig:
       target: dpm.modules.decoder.Decoder_only
       params:
-        d_model: 768
-        num_head: 8
-        num_layer: 12
+        d_model: 1024
+        num_head: 16
+        num_layer: 14
+        layer_dim_forward: 3072
+        layer_dropout: 0.4
+        layer_activation: "gelu"
     ckpt_path: null
-    embed_dim: 768
+    embed_dim: 1024
     gen_strategy: "greedy"
 
 data:

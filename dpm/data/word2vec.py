@@ -62,7 +62,7 @@ class ImageTextDataset(Dataset):
         indices = self.text_to_indices(description)
         indices_tensor = torch.tensor(indices, dtype=torch.long)
         # 对description应用预处理，并分词
-        preprocessed_description = self.preprocess_text(description).split()
+        preprocessed_description = [self.preprocess_text(description)]
 
         return {'image': image, 'indices': indices_tensor, 'description': preprocessed_description}
 
@@ -80,17 +80,15 @@ class datapreprocess():
         # 对索引进行填充
         indices_padded = pad_sequence(indices, batch_first=True, padding_value=0)
 
-        # 获取最长的描述长度
-        max_length = max(len(desc) for desc in descriptions)
         
         # 对描述进行填充
-        descriptions_padded = [desc + ['<pad>'] * (max_length - len(desc)) for desc in descriptions]
 
         images_tensor = torch.stack(images)
+        
 
         return {
             'image': images_tensor,
             'indices': indices_padded,
-            'description': descriptions_padded
+            'description': descriptions
         }
 

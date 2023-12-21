@@ -3,7 +3,7 @@ from lightning.pytorch.utilities.types import STEP_OUTPUT
 import torch
 import lightning.pytorch as pl
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
-from dpm.utils import instantiate_from_config,get_vocabulary
+from dpm.utils import instantiate_from_config,get_vocabulary,convert_to_word_lists
 from dpm.modules.search_strategy import beam_search,greedy_search
 from dpm.evaluation import compute_meteor_score,compute_rouge_score
 class Pic2TextModel(pl.LightningModule):
@@ -99,12 +99,12 @@ class Pic2TextModel(pl.LightningModule):
         self.log('val/loss',loss,on_step=True,on_epoch=True,prog_bar=True)
         self.log('val_loss',loss,on_step=True,on_epoch=True,prog_bar=True)
         if self.strategy=="greedy":
-            output,_=greedy_search(model=self,X=inputs,predictions=gt.shape[1])
+            output,_=greedy_search(model=self,X=inputs,predictions=gt.shape[1]-2)
             
             best_sequence=output
             # 计算评价指标
         elif self.strategy=="beam":
-            result,_ =beam_search(model=self,X=inputs,predictions=gt.shape[1],beam_width=3,batch_size=20)
+            result,_ =beam_search(model=self,X=inputs,predictions=gt.shape[1]-2,beam_width=3,batch_size=20)
             min_loss = float('inf')
 
             # 遍历所有beam search的结果
@@ -119,7 +119,9 @@ class Pic2TextModel(pl.LightningModule):
         else:
             raise RuntimeError('strategy doesnt match!')
         best_sequence=best_sequence.cpu().detach().numpy()
-        sentence=self.batch_int_sequence_to_text(best_sequence)
+        
+        gt_text=convert_to_word_lists(gt_text)
+        sentence=self.batch_int_sequence_to_text(best_sequence,gt_text)
         try:
             rouge = compute_rouge_score(gt_text, sentence)
             meteor = compute_meteor_score(gt_text,sentence)
@@ -160,7 +162,7 @@ class Pic2TextModel(pl.LightningModule):
         lr = self.lr
         opt = torch.optim.Adam(list(self.encoder.parameters())+
                                   list(self.decoder.parameters())+list(self.embed.parameters())+list(self.output_layer.parameters()),
-                                  lr=lr, betas=(0.5, 0.9))
+                                  lr=lr, betas=(0.5, 0.9),weight_decay=1e-5)
         return opt
     @rank_zero_only
     def log_image_and_text(self,batch):
@@ -174,35 +176,35 @@ class Pic2TextModel(pl.LightningModule):
             elif self.strategy=='beam':
                 index_output,_=beam_search(model=self,X=image,predictions=gt_index.shape[1])
             index_output=index_output.cpu().detach().numpy()
-            text_output=self.batch_int_sequence_to_text(index_output)
+            gt_text=convert_to_word_lists(gt_text)
+            text_output=self.batch_int_sequence_to_text(index_output,gt_text)
             log['input_img']=image
             gt_text_str_list= [' '.join(word_list) for word_list in gt_text]
             gen_text_str_list=[' '.join(word_list) for word_list in text_output]
-            gt_text_str_list = [text.replace('<pad>', '') for text in gt_text_str_list]
             log["gt_text"] = gt_text_str_list
             log["gen_text"]=gen_text_str_list
 
         return log
     
-    def batch_int_sequence_to_text(self,batch_int_sequences,  special_tokens_indexes=[0, 1,2, 3]):
+    def batch_int_sequence_to_text(self, batch_int_sequences, ground_truth_batch, special_tokens_indexes=[0, 1, 2, 3]):
     
         index_to_word = {index: word for word, index in self.vocabulary.items()}
         
         sentences = []
         
-        
-        for int_sequence in batch_int_sequences:
-    
+        for int_sequence, ground_truth in zip(batch_int_sequences, ground_truth_batch):
             # 转换每个整数序列为单词序列并过滤特殊词汇
             words = [index_to_word.get(index, "") for index in int_sequence if index not in special_tokens_indexes]
-    
+
+            # 确保单词数量与ground_truth中的单词数量一致
+            words_count = len(ground_truth)
+            words = words[:words_count]  # 截断或保持words列表以匹配单词数量
+
             # 将单词序列组合为句子
-            #sentence = ' '.join(words)
-            #print('sentence',sentence)
             sentences.append(words)
 
         return sentences
-    
+        
 
             
 

@@ -3,9 +3,10 @@ from torch import nn
 import torch
 import math
 class Decoder_only(nn.Module):
-    def __init__(self, d_model, num_head, num_layer):
+    def __init__(self, d_model, num_head, num_layer,layer_dim_forward,layer_dropout,layer_activation='relu'):
         super().__init__()
-        self.decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=num_head)
+        self.decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=num_head,dim_feedforward=layer_dim_forward,
+                                                        dropout=layer_dropout,activation=layer_activation)
         self.decode = nn.TransformerDecoder(self.decoder_layer, num_layers=num_layer)
 
     
