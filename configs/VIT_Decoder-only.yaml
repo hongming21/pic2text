@@ -51,7 +51,7 @@ data:
     prefetch_factor: 2
 trainer:
     check_val_every_n_epoch: 1
-    max_epochs: 30
+    max_epochs: 25
     benchmark: True
 seed_everything: 42
 ckpt_path: null
