@@ -29,3 +29,10 @@ def convert_to_word_lists(batch):
         words = re.findall(regex, sentence)
         new_batch.append(words)
     return new_batch
+def join_words(word_list):
+    sentence = ''
+    for word in word_list:
+        if word in [".", ",", "!", "?"]:  # 您可以根据需要添加更多的标点符号
+            sentence = sentence.rstrip()  # 删除最后一个空格
+        sentence += word + " "
+    return sentence.strip()
