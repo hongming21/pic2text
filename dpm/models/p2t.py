@@ -1,4 +1,5 @@
 from typing import Any
+import numpy
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 import torch
 import lightning.pytorch as pl
@@ -20,8 +21,8 @@ class Pic2TextModel(pl.LightningModule):
                  image_key="image",
                  gt_key='indices',
                  gt_text='description',
-                 gen_strategy='beam-search'
-                 
+                 gen_strategy='beam-search',
+                 train_strategy='forcing'
                  ):
         super().__init__()
         self.lr=learning_rate
@@ -38,6 +39,7 @@ class Pic2TextModel(pl.LightningModule):
         self.strategy=gen_strategy
         self.embed=torch.nn.Embedding(num_embeddings=len(self.vocabulary),embedding_dim=embed_dim,padding_idx=0)
         self.output_layer = torch.nn.Linear(embed_dim,len(self.vocabulary))
+        self.train_strategy=train_strategy
         self.automatic_optimization=False
     def init_from_ckpt(self, path, ignore_keys=list()):
         sd = torch.load(path, map_location="cpu")["state_dict"]
@@ -98,35 +100,46 @@ class Pic2TextModel(pl.LightningModule):
         opt.zero_grad()
         inputs = self.get_data(batch, self.image_key)
         gt = self.get_data(batch, self.gt_key)
+        if self.train_strategy=='sample':
+            decoder_input = gt[:, :1]
 
-        decoder_input = gt[:, :1]
+            # 初始化损失和计数器
+            total_loss = 0
+            total_count = 0
 
-        # 初始化损失和计数器
-        total_loss = 0
-        total_count = 0
+            for t in range(1, gt.size(1)):
+                logits = self(inputs, decoder_input)
+                # 每个时间步都计算损失
+                loss_t = self.loss(logits[:, -1], gt[:, t])
+                total_loss += loss_t
 
-        for t in range(1, gt.size(1)):
-            logits = self(inputs, decoder_input)
-            # 每个时间步都计算损失
-            loss_t = self.loss(logits[:, -1], gt[:, t])
-            total_loss += loss_t
+                # 更新计数器
+                total_count += 1
 
-            # 更新计数器
-            total_count += 1
+                # Scheduled Sampling
+                if random.random() < sampling_prob:
+                    next_input = logits[:, -1].argmax(dim=1).unsqueeze(1)
+                else:
+                    next_input = gt[:, t].unsqueeze(1)
 
-            # Scheduled Sampling
-            if random.random() < sampling_prob:
-                next_input = logits[:, -1].argmax(dim=1).unsqueeze(1)
-            else:
-                next_input = gt[:, t].unsqueeze(1)
+                decoder_input = torch.cat([decoder_input, next_input], dim=1)
 
-            decoder_input = torch.cat([decoder_input, next_input], dim=1)
-
-        # 使用总损失和计数器来计算平均损失
-        loss = total_loss / total_count
-        self.manual_backward(loss)
-        opt.step()
-        self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+            # 使用总损失和计数器来计算平均损失
+            loss = total_loss / total_count
+            self.manual_backward(loss)
+            opt.step()
+            self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        elif self.train_strategy=='forcing':
+            logits = self(inputs, gt[:, :-1])
+            output = logits.reshape(-1, logits.size(-1))
+            target = gt[:, 1:].reshape(-1)
+        
+        
+            loss=self.loss(output,target)# teacher forcing
+            self.manual_backward(loss)
+            opt.step()
+            self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+            
         return loss
     def validation_step(self, batch, batch_indx) :
         inputs = self.get_data(batch, self.image_key)
@@ -161,11 +174,17 @@ class Pic2TextModel(pl.LightningModule):
         sentence=self.batch_int_sequence_to_text(best_sequence,gt_text)
         gt_text_str_list= [join_words(word_list) for word_list in gt_text]
         gen_text_str_list=[join_words(word_list) for word_list in sentence]
+        try:
+            rouge = compute_rouge_score(gt_text_str_list, gen_text_str_list)
+        except:
+            rouge=0.0
+        try:
+            meteor = compute_meteor_score(gt_text,convert_to_word_lists(gen_text_str_list))
+        except:
+            meteor=0.0
         
-        rouge = compute_rouge_score(gt_text_str_list, gen_text_str_list)
-        meteor = compute_meteor_score(gt_text,convert_to_word_lists(gen_text_str_list))
         self.log('val/rouge-l', rouge, on_epoch=True)
-        #self.log('val/meteor', meteor, on_epoch=True)
+        self.log('val/meteor', meteor, on_epoch=True)
                 
     '''
     
@@ -211,6 +230,7 @@ class Pic2TextModel(pl.LightningModule):
                 index_output,_=greedy_search(model=self,X=image,predictions=gt_index.shape[1])
             elif self.strategy=='beam':
                 index_output,_=beam_search(model=self,X=image,predictions=gt_index.shape[1])
+                index_output=index_output[:,random.randint(0, 2),:]
             index_output=index_output.cpu().detach().numpy()
             gt_text=convert_to_word_lists(gt_text)
             text_output=self.batch_int_sequence_to_text(index_output,gt_text)
@@ -243,15 +263,15 @@ class Pic2TextModel(pl.LightningModule):
             sentences.append(words)
 
         return sentences
-    def get_sampling_prob(self, max_steps=30000, initial_prob=0.1, max_prob=0.9):
+    def get_sampling_prob(self, min_prob=0.1):
     # 确保 global_step 不超过 max_steps
         global_step=self.global_step
 
         # 计算当前的采样概率
-        sampling_prob = initial_prob + (max_prob - initial_prob) * (global_step / max_steps)
+        sampling_prob = 1 - 5/(5+numpy.exp(global_step/5))
 
-        # 确保采样概率不超过最大值
-        sampling_prob = min(sampling_prob, max_prob)
+        # 确保采样概率低于最大值
+        sampling_prob = max(sampling_prob, min_prob)
 
         return sampling_prob
 

@@ -326,7 +326,7 @@ if __name__ == "__main__":
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     logdir=Path('logs')
     sys.path.append(Path.cwd())
-    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=100,val_batch_frequency=50,
+    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=400,val_batch_frequency=200,
                                           max_log=4,log_on_batch_idx=True)
     cuda_callback=CUDACallback()
     lr_callback=LearningRateMonitor(logging_interval='step')

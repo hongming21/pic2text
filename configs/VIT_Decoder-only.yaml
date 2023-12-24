@@ -9,52 +9,53 @@ model:
     ecconfig:
       target: dpm.modules.encoder.ViTencoder
       params:
-        hidden_size: 1024
-        num_hidden_layers: 14
-        num_attention_heads: 16
-        intermediate_size: 3072
-        image_size: [768,512]
+        hidden_size: 512
+        num_hidden_layers: 6
+        num_attention_heads: 8
+        intermediate_size: 2048
+        image_size: [512,374]
         patch_size: 32
         num_channels: 3
         type: 'patch'
     dcconfig:
       target: dpm.modules.decoder.Decoder_only
       params:
-        d_model: 1024
-        num_head: 16
-        num_layer: 14
-        layer_dim_forward: 3072
-        layer_dropout: 0.4
+        d_model: 512
+        num_head: 8
+        num_layer: 6
+        layer_dim_forward: 2048
+        layer_dropout: 0.2
         layer_activation: "gelu"
     ckpt_path: null
-    embed_dim: 1024
-    gen_strategy: "greedy"
+    embed_dim: 512
+    gen_strategy: "beam"
+    train_strategy: 'sample' #sample--schema sampling #forcing teacher forcing
 
 data:
   class_path: main.DataModuleFromConfig
   init_args:
-    batch_size: 8
+    batch_size: 4
     train: 
       target: dpm.data.word2vec.ImageTextDataset
       params: 
         json_file_path: './data/deepfashion-multimodal/train_captions.json'
         image_folder_path: './data/deepfashion-multimodal/images'
-        image_size: [768,512]
+        image_size: [512,374]
     validation:
       target: dpm.data.word2vec.ImageTextDataset
       params: 
         json_file_path: './data/test_captions.json'
         image_folder_path: './data/deepfashion-multimodal/images'
-        image_size: [768,512]
+        image_size: [512,374]
     collect_fn: 
       target: dpm.data.word2vec.datapreprocess
     wrap: false
-    num_workers: 6
+    num_workers: 8
     pin_memory: False
     prefetch_factor: 2
 trainer:
-    check_val_every_n_epoch: 1
-    max_epochs: 25
+    check_val_every_n_epoch: 3
+    max_epochs: 36
     benchmark: True
 seed_everything: 42
 ckpt_path: null

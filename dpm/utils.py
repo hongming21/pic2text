@@ -23,8 +23,10 @@ def convert_to_word_lists(batch):
     
     new_batch = []
     for item in batch:
-        # 提取字符串
-        sentence = item[0]
+        if item is None:
+            sentence=''
+        else:
+            sentence = item[0]
         # 使用正则表达式拆分为单词列表
         words = re.findall(regex, sentence)
         new_batch.append(words)
