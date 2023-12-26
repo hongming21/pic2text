@@ -339,13 +339,14 @@ if __name__ == "__main__":
     cuda_callback = CUDACallback()
     lr_callback = LearningRateMonitor(logging_interval='step')
     model_ckpt_callback = ModelCheckpoint(
-        dirpath=os.path.join(logdir, 'checkpoints'),
-        monitor='val_loss',
-        verbose=True,
-        filename='{epoch:02d}-{val_loss:.2f}',
-        save_top_k=3,
-        mode='min',
-        save_last=True
+                    dirpath=str(logdir/now/'checkpoints'),
+                    monitor='monitor',
+                    verbose= True,
+                    filename='{epoch:02d}-{monitor:.2f}',
+                    save_top_k=2,
+                    mode='max',
+                    save_last=True
+    )
     )
 
     # 初始化 Lightning CLI

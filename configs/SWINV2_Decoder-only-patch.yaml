@@ -1,0 +1,72 @@
+model:
+  class_path: dpm.models.p2t.Pic2TextModel
+  init_args:
+    learning_rate: 5.0e-06
+    loss: 
+      target: torch.nn.CrossEntropyLoss
+      params: 
+        ignore_index: 0
+    ecconfig:
+      target: dpm.modules.encoder.Swinv2encoder
+      params:
+        image_size: [768,512]
+        patch_size: 16
+        num_channels: 3
+        embed_dim: 256
+        depths: [4,6,8]
+        num_heads: [16,32,64]
+        window_size: 7
+        mlp_ratio: 4.0
+        qkv_bias: true
+        hidden_dropout_prob: 0.3
+        attention_probs_dropout_prob: 0.3
+        drop_path_rate: 0.1
+        hidden_act: "gelu"
+        use_absolute_embeddings: false
+        initializer_range: 0.02
+        layer_norm_eps: 1e-5
+        encoder_stride: 32
+        type: "patch"
+    dcconfig:
+      target: dpm.modules.decoder.Decoder_only
+      params:
+        d_model: 1024
+        num_head: 64
+        num_layer: 12
+        layer_dim_forward: 3072
+        layer_dropout: 0.4
+        layer_activation: "gelu"
+    ckpt_path: null
+    embed_dim: 1024
+    gen_strategy: "beam"
+    train_strategy: 'forcing' #sample--schema sampling #forcing teacher forcing
+
+data:
+  class_path: main.DataModuleFromConfig
+  init_args:
+    batch_size: 24
+    train: 
+      target: dpm.data.word2vec.ImageTextDataset
+      params: 
+        json_file_path: './data/deepfashion-multimodal/train_captions.json'
+        image_folder_path: './data/deepfashion-multimodal/images'
+        image_size: [768,512]
+    validation:
+      target: dpm.data.word2vec.ImageTextDataset
+      params: 
+        json_file_path: './data/test_captions.json'
+        image_folder_path: './data/deepfashion-multimodal/images'
+        image_size: [768,512]
+    collect_fn: 
+      target: dpm.data.word2vec.datapreprocess
+    wrap: false
+    num_workers: 16
+    pin_memory: False
+    prefetch_factor: 2
+trainer:
+    check_val_every_n_epoch: 4
+    max_epochs: 37
+    benchmark: True
+seed_everything: 43
+ckpt_path: null
+      

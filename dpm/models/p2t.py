@@ -4,7 +4,7 @@ from lightning.pytorch.utilities.types import STEP_OUTPUT
 import torch
 import lightning.pytorch as pl
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
-from dpm.utils import instantiate_from_config,get_vocabulary,convert_to_word_lists,join_words
+from dpm.utils import instantiate_from_config,get_vocabulary,convert_to_word_lists,join_words,split_into_word_lists
 from dpm.modules.search_strategy import beam_search,greedy_search
 from dpm.evaluation import compute_meteor_score,compute_rouge_score
 from numpy import random
@@ -147,7 +147,6 @@ class Pic2TextModel(pl.LightningModule):
         gt_text=self.get_data(batch,self.text_key)
         loss=self.compute_loss(inputs,gt)
         self.log('val/loss',loss,on_step=True,on_epoch=True,prog_bar=True)
-        self.log('val_loss',loss,on_step=True,on_epoch=True,prog_bar=True)
         if self.strategy=="greedy":
             output,_=greedy_search(model=self,X=inputs,predictions=gt.shape[1]-2)
             
@@ -179,12 +178,16 @@ class Pic2TextModel(pl.LightningModule):
         except:
             rouge=0.0
         try:
-            meteor = compute_meteor_score(gt_text,convert_to_word_lists(gen_text_str_list))
+            
+            meteor = compute_meteor_score(gt_text,split_into_word_lists(gen_text_str_list))
+
         except:
             meteor=0.0
-        
+       
+        monitor=meteor+rouge
         self.log('val/rouge-l', rouge, on_epoch=True)
         self.log('val/meteor', meteor, on_epoch=True)
+        self.log('monitor',monitor,on_epoch=True)
                 
     '''
     
@@ -268,7 +271,7 @@ class Pic2TextModel(pl.LightningModule):
         global_step=self.global_step
 
         # 计算当前的采样概率
-        sampling_prob = 1 - 5/(5+numpy.exp(global_step/5))
+        sampling_prob = 1 - 1000/(1000+numpy.exp(min(global_step/1000,10)))
 
         # 确保采样概率低于最大值
         sampling_prob = max(sampling_prob, min_prob)

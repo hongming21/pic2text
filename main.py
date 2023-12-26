@@ -290,7 +290,6 @@ class Image_text_logger(Callback):
                 try:
                     self.log_steps.pop(0)
                 except IndexError as e:
-                    print(e)
                     pass
                 return True
         elif split=='val':
@@ -299,7 +298,6 @@ class Image_text_logger(Callback):
                 try:
                     self.log_steps.pop(0)
                 except IndexError as e:
-                    print(e)
                     pass
                 return True
         return False
@@ -326,17 +324,17 @@ if __name__ == "__main__":
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     logdir=Path('logs')
     sys.path.append(Path.cwd())
-    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=400,val_batch_frequency=200,
+    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=500,val_batch_frequency=100,
                                           max_log=4,log_on_batch_idx=True)
     cuda_callback=CUDACallback()
     lr_callback=LearningRateMonitor(logging_interval='step')
     model_ckpt_callback=ModelCheckpoint( 
                     dirpath=str(logdir/now/'checkpoints'),
-                    monitor='val_loss',
+                    monitor='monitor',
                     verbose= True,
-                    filename='{epoch:02d}-{val_loss:.2f}',
-                    save_top_k=3,
-                    mode='min',
+                    filename='{epoch:02d}-{monitor:.2f}',
+                    save_top_k=2,
+                    mode='max',
                     save_last=True
     )
     

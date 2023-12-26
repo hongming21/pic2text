@@ -38,3 +38,9 @@ def join_words(word_list):
             sentence = sentence.rstrip()  # 删除最后一个空格
         sentence += word + " "
     return sentence.strip()
+def split_into_word_lists(strings):
+    # Define a pattern to match words and punctuation
+    pattern = r'\w+|[^\w\s]'
+
+    # Use list comprehension to process each string
+    return [re.findall(pattern, string) for string in strings]
