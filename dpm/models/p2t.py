@@ -96,39 +96,45 @@ class Pic2TextModel(pl.LightningModule):
         return loss'''
     def training_step(self, batch, batch_idx):
         sampling_prob=self.get_sampling_prob()
-        opt=self.optimizers()
-        opt.zero_grad()
+        opt1,opt2=self.optimizers()
+        opt1.zero_grad()
+        opt2.zero_grad()
         inputs = self.get_data(batch, self.image_key)
         gt = self.get_data(batch, self.gt_key)
         if self.train_strategy=='sample':
-            decoder_input = gt[:, :1]
+            if self.global_step<1600:
+                logits = self(inputs, gt[:, :-1])
+                output = logits.reshape(-1, logits.size(-1))
+                target = gt[:, 1:].reshape(-1)
+            
+            
+                loss=self.loss(output,target)# teacher forcing
+                self.manual_backward(loss)
+                opt1.step()
+                self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+            else:
+                logits = self(inputs, gt[:, :-1])
+                
+                predicted = logits.argmax(dim=-1)
+                decoder_input = gt[:, :1]
+                for t in range(1, gt.size(1)-1):
+            # 根据采样概率替换输入
+                    if random.random() < sampling_prob:
+                        # 使用模型的预测
+                        next_input = predicted[:, t-1].unsqueeze(-1)
+                    else:
+                        # 使用真实的下一个输入
+                        next_input = gt[:, t].unsqueeze(-1)
 
-            # 初始化损失和计数器
-            total_loss = 0
-            total_count = 0
+                    decoder_input = torch.cat([decoder_input, next_input], dim=-1)
+                new_logits = self(inputs, decoder_input)
+                output = new_logits.reshape(-1, new_logits.size(-1))
 
-            for t in range(1, gt.size(1)):
-                logits = self(inputs, decoder_input)
-                # 每个时间步都计算损失
-                loss_t = self.loss(logits[:, -1], gt[:, t])
-                total_loss += loss_t
-
-                # 更新计数器
-                total_count += 1
-
-                # Scheduled Sampling
-                if random.random() < sampling_prob:
-                    next_input = logits[:, -1].argmax(dim=1).unsqueeze(1)
-                else:
-                    next_input = gt[:, t].unsqueeze(1)
-
-                decoder_input = torch.cat([decoder_input, next_input], dim=1)
-
-            # 使用总损失和计数器来计算平均损失
-            loss = total_loss / total_count
-            self.manual_backward(loss)
-            opt.step()
-            self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+                target= gt[:,1:].reshape(-1)
+                loss=self.loss(output,target)
+                self.manual_backward(loss)
+                opt2.step()
+                self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
         elif self.train_strategy=='forcing':
             logits = self(inputs, gt[:, :-1])
             output = logits.reshape(-1, logits.size(-1))
@@ -137,7 +143,7 @@ class Pic2TextModel(pl.LightningModule):
         
             loss=self.loss(output,target)# teacher forcing
             self.manual_backward(loss)
-            opt.step()
+            opt1.step()
             self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
             
         return loss
@@ -188,40 +194,15 @@ class Pic2TextModel(pl.LightningModule):
         self.log('val/rouge-l', rouge, on_epoch=True)
         self.log('val/meteor', meteor, on_epoch=True)
         self.log('monitor',monitor,on_epoch=True)
-                
-    '''
-    
-    def greedy_search(self,inputs,gt):
-        sos_batch = torch.full((inputs.shape[0], 1), 1, dtype=torch.long, device=inputs.device)
-
-        # 初始化解码器的输入为 SOS
-        decoder_input = sos_batch
-        max_length = gt.size(1)  # 假设我们希望生成长度与 gt 一致的序列
-
-        # 逐步生成序列
-        output = []
-        eos_reached = False
-        for _ in range(max_length):
-            decoder_output = self(inputs, decoder_input)
-            next_token = decoder_output[:, -1, :].argmax(dim=-1, keepdim=True)
-            
-            if next_token.item() == 2:  # 假设 2 是 EOS 的索引
-                eos_reached = True
-            
-            if eos_reached:
-                next_token.fill_(0)  # 用 PAD (0) 填充
-
-            decoder_input = torch.cat([decoder_input, next_token], dim=-1)
-            output.append(next_token)
-
-        output = torch.cat(output, dim=1)
-        return output'''
     def configure_optimizers(self):
         lr = self.lr
-        opt = torch.optim.Adam(list(self.encoder.parameters())+
+        opt1 = torch.optim.Adam(list(self.encoder.parameters())+
                                   list(self.decoder.parameters())+list(self.embed.parameters())+list(self.output_layer.parameters()),
                                   lr=lr, betas=(0.5, 0.9),weight_decay=1e-5)
-        return opt
+        opt2=torch.optim.Adam(list(self.encoder.parameters())+
+                                  list(self.decoder.parameters())+list(self.embed.parameters())+list(self.output_layer.parameters()),
+                                  lr=lr/10, betas=(0.5, 0.9),weight_decay=1e-5)
+        return opt1,opt2
     @rank_zero_only
     def log_image_and_text(self,batch):
         with torch.no_grad():
@@ -271,10 +252,10 @@ class Pic2TextModel(pl.LightningModule):
         global_step=self.global_step
 
         # 计算当前的采样概率
-        sampling_prob = 1 - 1000/(1000+numpy.exp(min(global_step/1000,10)))
+        sampling_prob = -0.09+(global_step/10000)*0.9
 
         # 确保采样概率低于最大值
-        sampling_prob = max(sampling_prob, min_prob)
+        sampling_prob = max(sampling_prob, 0.9)
 
         return sampling_prob
 

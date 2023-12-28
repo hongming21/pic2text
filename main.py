@@ -324,7 +324,7 @@ if __name__ == "__main__":
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     logdir=Path('logs')
     sys.path.append(Path.cwd())
-    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=500,val_batch_frequency=100,
+    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=400,val_batch_frequency=120,
                                           max_log=4,log_on_batch_idx=True)
     cuda_callback=CUDACallback()
     lr_callback=LearningRateMonitor(logging_interval='step')
@@ -339,6 +339,7 @@ if __name__ == "__main__":
     )
     
     cli=LightningCLI(
+        save_config_kwargs={"overwrite": True},
         trainer_defaults={
             'logger':lazy_instance(TensorBoardLogger,save_dir=logdir,name=now,version=0),
             'callbacks':[img_logger_callback,cuda_callback,lr_callback,model_ckpt_callback]

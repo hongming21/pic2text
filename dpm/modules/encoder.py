@@ -40,23 +40,24 @@ class Swinv2encoder(nn.Module):
                 type='patch'):
         super().__init__()
         self.config=Swinv2Config(
-                image_size,
-                patch_size, 
-                num_channels,
-                embed_dim,
-                depths,
-                num_heads,
-                window_size,
-                mlp_ratio,
-                qkv_bias,
-                hidden_dropout_prob,
-                attention_probs_dropout_prob,
-                drop_path_rate,
-                hidden_act,
-                use_absolute_embeddings,
-                initializer_range,
-                layer_norm_eps,
-                encoder_stride,
+
+                image_size=image_size,
+                patch_size=patch_size, 
+                num_channels=num_channels,
+                embed_dim=embed_dim,
+                depths=depths,
+                num_heads=num_heads,
+                window_size=window_size,
+                mlp_ratio=mlp_ratio,
+                qkv_bias=qkv_bias,
+                hidden_dropout_prob=hidden_dropout_prob,
+                attention_probs_dropout_prob=attention_probs_dropout_prob,
+                drop_path_rate=drop_path_rate,
+                hidden_act=hidden_act,
+                use_absolute_embeddings=use_absolute_embeddings,
+                initializer_range=initializer_range,
+                layer_norm_eps=layer_norm_eps,
+                encoder_stride=encoder_stride
         )
         self.model=Swinv2Model(self.config,add_pooling_layer = True)
         self.encode_type=type

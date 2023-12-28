@@ -22,7 +22,7 @@ class Decoder_only(nn.Module):
 class Encoder_Decoder(nn.Module):
     def __init__(self,d_model=512, nhead=8, num_encoder_layers=6, num_decoder_layers=6, 
                  dim_feedforward=2048,dropout=0.1):
-        super.__init__()
+        super().__init__()
         self.transformer=Transformer(d_model=d_model,num_decoder_layers=num_encoder_layers,nhead=nhead,
                                      num_encoder_layers=num_decoder_layers,dim_feedforward=dim_feedforward,
                                      dropout=dropout
