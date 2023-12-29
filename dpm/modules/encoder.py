@@ -1,6 +1,7 @@
 from transformers import Swinv2Model,ViTModel,ViTConfig,Swinv2Config
 from torch import nn
-
+import torch
+from torchvision.models import resnet50,resnet101
 class ViTencoder(nn.Module):
     def __init__(self, hidden_size = 768,num_hidden_layers = 12,num_attention_heads = 12,intermediate_size = 3072,
               image_size = 224,patch_size = 16, num_channels = 3,type='patch'):
@@ -67,3 +68,90 @@ class Swinv2encoder(nn.Module):
         elif self.encode_type=='all':
             pooler_output = self.model(x).pooler_output.unsqueeze(1)  # 维度变为 [batch_size, 1, hidden_size]
             return pooler_output
+        
+class VGG19(nn.Module):
+    def __init__(self, embed_dim=512):
+        super(VGG19, self).__init__()
+        # VGG-19 layers
+        self.features = nn.Sequential(
+            # Convolutional layers block 1
+            nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            # Convolutional layers block 2
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            # Convolutional layers block 3
+            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            # Convolutional layers block 4
+            nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            # Convolutional layers block 5
+            nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(in_channels=512, out_channels=embed_dim, kernel_size=1)
+
+        )
+    def forward(self, x):
+        x = self.features(x)
+        b=x.shape[0]
+        c=x.shape[1]
+        x = x.transpose(1,3).contiguous().reshape(b,-1,c)
+        return x
+
+
+class ResNet101Encoder(nn.Module):
+    def __init__(self,embed_dim=512):
+        super().__init__()
+
+        # 预训练的 ResNet-101 特征提取模型
+        self.feature_extractor = resnet101(pretrained=True)
+        layers = list(self.feature_extractor.children())[:-2]
+        self.feature_extractor = nn.Sequential(*layers)
+        # 用于调整特征向量大小的线性层
+        self.resize_features = nn.Conv2d(2048,embed_dim, 1)  # 1x1 卷积
+
+    def forward(self, x):
+        # 特征提取
+        features = self.feature_extractor(x)  # 特征图维度为 (B, 2048, H, W)
+        
+        # 调整特征向量大小
+        resized_features = self.resize_features(features)  # 输出维度 (B, 512, H, W)
+
+        # 重新排列维度以匹配所需输出格式 (B, H*W, 512)
+        bs, c, h, w = resized_features.shape
+        output = resized_features.view(bs, c, h*w).permute(0, 2, 1)
+
+        return output

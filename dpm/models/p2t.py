@@ -102,7 +102,7 @@ class Pic2TextModel(pl.LightningModule):
         inputs = self.get_data(batch, self.image_key)
         gt = self.get_data(batch, self.gt_key)
         if self.train_strategy=='sample':
-            if self.global_step<1600:
+            if self.global_step<1801:
                 logits = self(inputs, gt[:, :-1])
                 output = logits.reshape(-1, logits.size(-1))
                 target = gt[:, 1:].reshape(-1)
@@ -160,19 +160,10 @@ class Pic2TextModel(pl.LightningModule):
             # 计算评价指标
         elif self.strategy=="beam":
             result,_ =beam_search(model=self,X=inputs,predictions=gt.shape[1]-2,beam_width=3,batch_size=20)
-            min_loss = float('inf')
-
-            # 遍历所有beam search的结果
-            for i in range(result.shape[1]):
-                # 提取当前序列
-                current_sequence = result[:, i, :]
-
-                # 检查是否为最小损失
-                if loss < min_loss:
-                    min_loss = loss
-                    best_sequence = current_sequence
-        else:
-            raise RuntimeError('strategy doesnt match!')
+            
+                
+            best_sequence = result[:,0]
+    
         best_sequence=best_sequence.cpu().detach().numpy()
         
         gt_text=convert_to_word_lists(gt_text)
@@ -201,7 +192,7 @@ class Pic2TextModel(pl.LightningModule):
                                   lr=lr, betas=(0.5, 0.9),weight_decay=1e-5)
         opt2=torch.optim.Adam(list(self.encoder.parameters())+
                                   list(self.decoder.parameters())+list(self.embed.parameters())+list(self.output_layer.parameters()),
-                                  lr=lr/10, betas=(0.5, 0.9),weight_decay=1e-5)
+                                  lr=lr/3, betas=(0.5, 0.9),weight_decay=1e-5)
         return opt1,opt2
     @rank_zero_only
     def log_image_and_text(self,batch):
@@ -213,7 +204,7 @@ class Pic2TextModel(pl.LightningModule):
             if self.strategy=='greedy':
                 index_output,_=greedy_search(model=self,X=image,predictions=gt_index.shape[1])
             elif self.strategy=='beam':
-                index_output,_=beam_search(model=self,X=image,predictions=gt_index.shape[1])
+                index_output,_=beam_search(model=self,X=image,predictions=gt_index.shape[1],batch_size=20)
                 index_output=index_output[:,random.randint(0, 2),:]
             index_output=index_output.cpu().detach().numpy()
             gt_text=convert_to_word_lists(gt_text)
@@ -252,7 +243,7 @@ class Pic2TextModel(pl.LightningModule):
         global_step=self.global_step
 
         # 计算当前的采样概率
-        sampling_prob = -0.09+(global_step/10000)*0.9
+        sampling_prob = -0.09+(global_step/15000)*0.9
 
         # 确保采样概率低于最大值
         sampling_prob = max(sampling_prob, 0.9)

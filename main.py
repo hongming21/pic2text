@@ -155,7 +155,7 @@ class CUDACallback(Callback):
         return trainer.strategy.root_device.index
 
 class Image_text_logger(Callback):
-    def __init__(self, save_dir,train_batch_frequency,val_batch_frequency, max_log,clamp=True, increase_log_steps=True,
+    def __init__(self, save_dir,train_batch_frequency,val_batch_frequency, max_log,clamp=True, increase_log_steps=False,
                  rescale=True, disabled=False, log_on_batch_idx=False, log_first_step=False,
                  log_images_kwargs=None):
         super().__init__()
@@ -324,7 +324,7 @@ if __name__ == "__main__":
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     logdir=Path('logs')
     sys.path.append(Path.cwd())
-    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=400,val_batch_frequency=120,
+    img_logger_callback=Image_text_logger(save_dir=str(logdir/now),train_batch_frequency=200,val_batch_frequency=60,
                                           max_log=4,log_on_batch_idx=True)
     cuda_callback=CUDACallback()
     lr_callback=LearningRateMonitor(logging_interval='step')

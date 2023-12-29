@@ -1,6 +1,7 @@
 from torch.nn import TransformerDecoder,Transformer
 from torch import nn
 import torch
+from torch_geometric.nn import GCNConv
 import math
 class Decoder_only(nn.Module):
     def __init__(self, d_model, num_head, num_layer,layer_dim_forward,layer_dropout,layer_activation='relu'):
@@ -38,5 +39,4 @@ class Encoder_Decoder(nn.Module):
         output=self.transformer(src=x,tgt=gt,tgt_mask=tgt_mask)
         return output.permute(1,0,2)
         
-     
-                 
+
