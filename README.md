@@ -1,7 +1,7 @@
 # pic2text
 BUPT-NNDL-COURSE-DESIGN
 
-## linux-instruc
+## linux-instruction
 using 
 ```
 conda env create -f environment.yaml
